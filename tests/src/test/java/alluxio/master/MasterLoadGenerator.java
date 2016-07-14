@@ -30,47 +30,12 @@ import org.junit.Rule;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Creates a new Alluxio file system, generating empty files in the root directory with random name.
  */
 public class MasterLoadGenerator {
-  private static class RandomString {
-
-    private static final char[] SYMBOLS;
-
-    private final Random mRandom = new Random();
-
-    private final char[] mBuf;
-
-    static {
-      StringBuilder tmp = new StringBuilder();
-      for (char ch = '0'; ch <= '9';++ch) {
-        tmp.append(ch);
-      }
-      for (char ch = 'a'; ch <= 'z';++ch) {
-        tmp.append(ch);
-      }
-      SYMBOLS = tmp.toString().toCharArray();
-    }
-
-    RandomString(int length) {
-      if (length < 1) {
-        throw new IllegalArgumentException("length < 1: " + length);
-      }
-      mBuf = new char[length];
-    }
-
-    String nextString() {
-      mBuf[0] = '/';
-      for (int idx = 1; idx < mBuf.length;++idx) {
-        mBuf[idx] = SYMBOLS[mRandom.nextInt(SYMBOLS.length)];
-      }
-      return new String(mBuf);
-    }
-  }
 
   private static final String MNT_PATH = "/mnt";
   private static final int FILE_NUM = 100;
