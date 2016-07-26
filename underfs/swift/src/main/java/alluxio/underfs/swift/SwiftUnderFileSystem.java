@@ -31,7 +31,6 @@ import org.javaswift.joss.exception.NotFoundException;
 import org.javaswift.joss.model.Access;
 import org.javaswift.joss.model.Account;
 import org.javaswift.joss.model.Container;
-import org.javaswift.joss.model.Directory;
 import org.javaswift.joss.model.DirectoryOrObject;
 import org.javaswift.joss.model.PaginationMap;
 import org.javaswift.joss.model.StoredObject;
@@ -41,6 +40,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -190,13 +190,22 @@ public class SwiftUnderFileSystem extends UnderFileSystem {
     final String strippedPath = stripContainerPrefixIfPresent(path);
     Container container = mAccount.getContainer(mContainerName);
     if (recursive) {
+      boolean deletedSelf = false;
+
       // For a file, recursive delete will not find any children
       PaginationMap paginationMap = container.getPaginationMap(
-          addFolderSuffixIfNotPresent(strippedPath), DIR_PAGE_SIZE);
+          PathUtils.normalizePath(strippedPath, PATH_SEPARATOR), DIR_PAGE_SIZE);
       for (int page = 0; page < paginationMap.getNumberOfPages(); page++) {
         for (StoredObject childObject : container.list(paginationMap, page)) {
           deleteObject(childObject);
+          if (childObject.getName().equals(addFolderSuffixIfNotPresent(strippedPath))) {
+            // As PATH_SEPARATOR and FOLDER_SUFFIX are the same the folder would be fetched
+            deletedSelf = true;
+          }
         }
+      }
+      if (deletedSelf) {
+        return true;
       }
     } else {
       String[] children = list(path);
@@ -227,10 +236,13 @@ public class SwiftUnderFileSystem extends UnderFileSystem {
       return true;
     }
 
-    // Query file or folder using single listing query
-    Collection<DirectoryOrObject> objects =
-        listInternal(stripFolderSuffixIfPresent(stripContainerPrefixIfPresent(path)));
-    return objects != null && objects.size() != 0;
+    if (path.endsWith(FOLDER_SUFFIX)) {
+      // If path ends with the folder suffix, we do not check for the existence of a file
+      return isDirectory(path);
+    }
+
+    // If path does not have folder suffix we check for both a file or a folder
+    return isFile(path) || isDirectory(path);
   }
 
   /**
@@ -289,30 +301,13 @@ public class SwiftUnderFileSystem extends UnderFileSystem {
   }
 
   @Override
+  public String[] listRecursive(String path) throws IOException {
+    return listHelper(path, true);
+  }
+
+  @Override
   public String[] list(String path) throws IOException {
-    String prefix = addFolderSuffixIfNotPresent(stripContainerPrefixIfPresent(path));
-    prefix = prefix.equals(PATH_SEPARATOR) ? "" : prefix;
-
-    Collection<DirectoryOrObject> objects = listInternal(prefix);
-    Set<String> children = new HashSet<>();
-    final String self = stripFolderSuffixIfPresent(prefix);
-    boolean foundSelf = false;
-    for (DirectoryOrObject object : objects) {
-      String child = stripFolderSuffixIfPresent(object.getName());
-      String noPrefix = CommonUtils.stripPrefixIfPresent(child, prefix);
-      if (!noPrefix.equals(self)) {
-        children.add(noPrefix);
-      } else {
-        foundSelf = true;
-      }
-    }
-
-    if (!foundSelf) {
-      // Path does not exist
-      return null;
-    }
-
-    return children.toArray(new String[children.size()]);
+    return listHelper(path, false);
   }
 
   @Override
@@ -552,17 +547,64 @@ public class SwiftUnderFileSystem extends UnderFileSystem {
   }
 
   /**
-   * Lists the files or folders which match the given prefix.
+   * Lists the files or folders in the given path, not including the path itself.
+   *
+   * @param path the folder path whose children are listed
+   * @param recursive whether to do a recursive listing
+   * @return a collection of the files or folders in the given path, or null if path is a file or
+   * does not exist
+   * @throws IOException if path is not accessible, e.g. network issues
+   */
+  private String[] listHelper(String path, boolean recursive) throws IOException {
+    String prefix = PathUtils.normalizePath(stripContainerPrefixIfPresent(path), PATH_SEPARATOR);
+    prefix = prefix.equals(PATH_SEPARATOR) ? "" : prefix;
+
+    Collection<DirectoryOrObject> objects = listInternal(prefix, recursive);
+    Set<String> children = new HashSet<>();
+    final String self = stripFolderSuffixIfPresent(prefix);
+    boolean foundSelf = false;
+    for (DirectoryOrObject object : objects) {
+      String child = stripFolderSuffixIfPresent(object.getName());
+      String noPrefix = CommonUtils.stripPrefixIfPresent(child, prefix);
+      if (!noPrefix.equals(self)) {
+        children.add(noPrefix);
+      } else {
+        foundSelf = true;
+      }
+    }
+
+    if (!foundSelf) {
+      // Path does not exist
+      return null;
+    }
+
+    return children.toArray(new String[children.size()]);
+  }
+
+  /**
+   * Lists the files or folders which match the given prefix using pagination.
    *
    * @param prefix the prefix to match
+   * @param recursive whether to do a recursive listing
    * @return a collection of the files or folders matching the prefix, or null if not found
    * @throws IOException if path is not accessible, e.g. network issues
    */
-  private Collection<DirectoryOrObject> listInternal(final String prefix) throws IOException {
+  private Collection<DirectoryOrObject> listInternal(final String prefix, boolean recursive)
+      throws IOException {
     // TODO(adit): UnderFileSystem interface should be changed to support pagination
-    Directory directory = new Directory(prefix, PATH_SEPARATOR_CHAR);
+    ArrayDeque<DirectoryOrObject> results = new ArrayDeque<>();
     Container container = mAccount.getContainer(mContainerName);
-    return container.listDirectory(directory);
+    PaginationMap paginationMap = container.getPaginationMap(prefix, DIR_PAGE_SIZE);
+    for (int page = 0; page < paginationMap.getNumberOfPages(); page++) {
+      if (!recursive) {
+        // If not recursive, use delimiter to limit results fetched
+        results.addAll(container.listDirectory(paginationMap.getPrefix(), PATH_SEPARATOR_CHAR,
+            paginationMap.getMarker(page), paginationMap.getPageSize()));
+      } else {
+        results.addAll(container.list(paginationMap, page));
+      }
+    }
+    return results;
   }
 
   /**
