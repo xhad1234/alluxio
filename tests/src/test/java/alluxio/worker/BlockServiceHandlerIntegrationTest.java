@@ -17,10 +17,12 @@ import alluxio.LocalAlluxioClusterResource;
 import alluxio.client.FileSystemTestUtils;
 import alluxio.client.WriteType;
 import alluxio.client.block.BlockMasterClient;
+import alluxio.client.block.RetryHandlingBlockMasterClient;
 import alluxio.client.file.FileOutStream;
 import alluxio.client.file.FileSystem;
 import alluxio.client.file.URIStatus;
 import alluxio.client.file.options.CreateFileOptions;
+import alluxio.exception.ExceptionMessage;
 import alluxio.exception.InvalidPathException;
 import alluxio.heartbeat.HeartbeatContext;
 import alluxio.heartbeat.HeartbeatScheduler;
@@ -72,7 +74,7 @@ public class BlockServiceHandlerIntegrationTest {
     mBlockWorkerServiceHandler =
         mLocalAlluxioClusterResource.get().getWorker().getBlockWorker().getWorkerServiceHandler();
 
-    mBlockMasterClient = new BlockMasterClient(
+    mBlockMasterClient = new RetryHandlingBlockMasterClient(
         new InetSocketAddress(mLocalAlluxioClusterResource.get().getHostname(),
             mLocalAlluxioClusterResource.get().getMasterPort()));
   }
@@ -237,7 +239,13 @@ public class BlockServiceHandlerIntegrationTest {
     Assert.assertFalse(result);
 
     // Request for space on a nonexistent block should fail
-    Assert.assertFalse(mBlockWorkerServiceHandler.requestSpace(SESSION_ID, blockId2, chunkSize));
+    try {
+      mBlockWorkerServiceHandler.requestSpace(SESSION_ID, blockId2, chunkSize);
+      Assert.fail();
+    } catch (AlluxioTException e) {
+      Assert.assertEquals(ExceptionMessage.TEMP_BLOCK_META_NOT_FOUND.getMessage(blockId2),
+          e.getMessage());
+    }
 
     // Request for impossible initial space should fail
     Exception exception = null;
@@ -284,11 +292,9 @@ public class BlockServiceHandlerIntegrationTest {
 
   // Waits for a worker heartbeat to master to be processed
   private void waitForHeartbeat() throws InterruptedException {
-    Assert.assertTrue(HeartbeatScheduler.await(HeartbeatContext.WORKER_BLOCK_SYNC, 5,
-        TimeUnit.SECONDS));
+    HeartbeatScheduler.await(HeartbeatContext.WORKER_BLOCK_SYNC, 5, TimeUnit.SECONDS);
     HeartbeatScheduler.schedule(HeartbeatContext.WORKER_BLOCK_SYNC);
     // Wait for the next heartbeat to be ready to guarantee that the previous heartbeat has finished
-    Assert.assertTrue(HeartbeatScheduler.await(HeartbeatContext.WORKER_BLOCK_SYNC, 5,
-        TimeUnit.SECONDS));
+    HeartbeatScheduler.await(HeartbeatContext.WORKER_BLOCK_SYNC, 5, TimeUnit.SECONDS);
   }
 }

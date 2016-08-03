@@ -15,19 +15,19 @@ First, the Alluxio binaries must be on your machine. You can either
 [compile Alluxio](Building-Alluxio-Master-Branch.html), or
 [download the binaries locally](Running-Alluxio-Locally.html).
 
-Then, if you haven't already done so, create your configuration file with `bootstrap-conf` command.
+Then, if you haven't already done so, create your configuration file with `bootstrapConf` command.
 For example, if you are running Alluxio on your local machine, `ALLUXIO_MASTER_HOSTNAME` should be set to `localhost`
 
-{% include Configuring-Alluxio-with-GlusterFS/bootstrap-conf.md %}
+{% include Configuring-Alluxio-with-GlusterFS/bootstrapConf.md %}
 
-Alternatively, you can also create the configuration file from the template and set the contents manually. 
+Alternatively, you can also create the configuration file from the template and set the contents manually.
 
 {% include Common-Commands/copy-alluxio-env.md %}
 
 # Configuring Alluxio
 
 Assuming the GlusterFS bricks are co-located with Alluxio nodes, the GlusterFS volume is mounted at
-`/alluxio_vol`, the following environment variable assignment needs to be added to 
+`/mnt/gluster`, the following environment variable assignment needs to be added to
 `conf/alluxio-env.sh`:
 
 {% include Configuring-Alluxio-with-GlusterFS/underfs-address.md %}

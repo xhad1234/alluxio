@@ -12,7 +12,6 @@
 package alluxio.client;
 
 import alluxio.AlluxioURI;
-import alluxio.Configuration;
 import alluxio.Constants;
 import alluxio.IntegrationTestConstants;
 import alluxio.LocalAlluxioClusterResource;
@@ -24,6 +23,7 @@ import alluxio.client.file.options.CreateFileOptions;
 import alluxio.underfs.UnderFileSystem;
 import alluxio.underfs.UnderFileSystemCluster;
 import alluxio.underfs.hdfs.LocalMiniDFSCluster;
+import alluxio.underfs.swift.SwiftUnderStorageCluster;
 import alluxio.util.io.BufferUtils;
 
 import org.junit.Assert;
@@ -52,22 +52,10 @@ public abstract class AbstractFileOutStreamIntegrationTest {
           Constants.USER_FILE_BUFFER_BYTES, String.valueOf(BUFFER_BYTES),
           Constants.WORKER_DATA_SERVER, IntegrationTestConstants.NETTY_DATA_SERVER);
 
-  protected CreateFileOptions mWriteBoth;
-  protected CreateFileOptions mWriteAlluxio;
-  protected CreateFileOptions mWriteLocal;
-  protected CreateFileOptions mWriteAsync;
-  protected CreateFileOptions mWriteUnderStore;
-
-  protected Configuration mTestConf;
   protected FileSystem mFileSystem = null;
 
   @Before
   public void before() throws Exception {
-    mWriteBoth = StreamOptionUtils.getCreateFileOptionsCacheThrough();
-    mWriteAlluxio = StreamOptionUtils.getCreateFileOptionsMustCache();
-    mWriteUnderStore = StreamOptionUtils.getCreateFileOptionsThrough();
-    mWriteLocal = StreamOptionUtils.getCreateFileOptionsWriteLocal();
-    mWriteAsync = StreamOptionUtils.getCreateFileOptionsAsync();
     mFileSystem = mLocalAlluxioClusterResource.get().getClient();
   }
 
@@ -99,8 +87,8 @@ public abstract class AbstractFileOutStreamIntegrationTest {
       InputStream is = ufs.open(checkpointPath);
       byte[] res = new byte[(int) status.getLength()];
       String underFSClass = UnderFileSystemCluster.getUnderFSClass();
-      if (LocalMiniDFSCluster.class.getName().equals(underFSClass)
-          && 0 == res.length) {
+      if ((LocalMiniDFSCluster.class.getName().equals(underFSClass)
+          || SwiftUnderStorageCluster.class.getName().equals(underFSClass)) && 0 == res.length) {
         // Returns -1 for zero-sized byte array to indicate no more bytes available here.
         Assert.assertEquals(-1, is.read(res));
       } else {
@@ -113,9 +101,9 @@ public abstract class AbstractFileOutStreamIntegrationTest {
 
   protected List<CreateFileOptions> getOptionSet() {
     List<CreateFileOptions> ret = new ArrayList<>(3);
-    ret.add(mWriteBoth);
-    ret.add(mWriteAlluxio);
-    ret.add(mWriteUnderStore);
+    ret.add(CreateFileOptions.defaults().setWriteType(WriteType.CACHE_THROUGH));
+    ret.add(CreateFileOptions.defaults().setWriteType(WriteType.MUST_CACHE));
+    ret.add(CreateFileOptions.defaults().setWriteType(WriteType.THROUGH));
     return ret;
   }
 }

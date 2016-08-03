@@ -11,6 +11,7 @@
 
 package alluxio.master;
 
+import alluxio.AlluxioTestDirectory;
 import alluxio.Configuration;
 import alluxio.Constants;
 import alluxio.client.file.FileSystem;
@@ -19,9 +20,7 @@ import alluxio.util.network.NetworkAddressUtils;
 import alluxio.util.network.NetworkAddressUtils.ServiceType;
 
 import com.google.common.base.Supplier;
-import org.powermock.reflect.Whitebox;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 
@@ -55,8 +54,7 @@ public final class LocalAlluxioMaster {
 
     mJournalFolder = Configuration.get(Constants.MASTER_JOURNAL_FOLDER);
 
-    mAlluxioMaster = AlluxioMaster.Factory.create();
-    Whitebox.setInternalState(AlluxioMaster.class, "sAlluxioMaster", mAlluxioMaster);
+    mAlluxioMaster = AlluxioMaster.Factory.create(new MasterContext(new MasterSource()));
 
     // Reset the master port
     Configuration.set(Constants.MASTER_RPC_PORT, Integer.toString(getRPCLocalPort()));
@@ -219,7 +217,7 @@ public final class LocalAlluxioMaster {
   }
 
   private static String uniquePath() throws IOException {
-    return File.createTempFile("Alluxio", "").getAbsoluteFile() + "U" + System.nanoTime();
+    return AlluxioTestDirectory.createTemporaryDirectory("alluxio-master").getAbsolutePath();
   }
 
   /**

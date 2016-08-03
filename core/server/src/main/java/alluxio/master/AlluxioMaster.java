@@ -15,6 +15,7 @@ import alluxio.AlluxioURI;
 import alluxio.Configuration;
 import alluxio.Constants;
 import alluxio.RuntimeConstants;
+import alluxio.Server;
 import alluxio.master.block.BlockMaster;
 import alluxio.master.file.FileSystemMaster;
 import alluxio.master.journal.ReadWriteJournal;
@@ -58,10 +59,10 @@ import javax.annotation.concurrent.ThreadSafe;
  * Entry point for the Alluxio master program.
  */
 @NotThreadSafe
-public class AlluxioMaster {
+public class AlluxioMaster implements Server {
   private static final Logger LOG = LoggerFactory.getLogger(Constants.LOGGER_TYPE);
 
-  private static AlluxioMaster sAlluxioMaster = null;
+  protected final MasterContext mMasterContext;
 
   /**
    * Starts the Alluxio master.
@@ -81,7 +82,7 @@ public class AlluxioMaster {
       System.exit(-1);
     }
 
-    AlluxioMaster master = get();
+    AlluxioMaster master = new AlluxioMaster(new MasterContext(new MasterSource()));
     try {
       master.start();
     } catch (Exception e) {
@@ -94,18 +95,6 @@ public class AlluxioMaster {
       }
       System.exit(-1);
     }
-  }
-
-  /**
-   * Returns a handle to the Alluxio master instance.
-   *
-   * @return Alluxio master handle
-   */
-  public static synchronized AlluxioMaster get() {
-    if (sAlluxioMaster == null) {
-      sAlluxioMaster = Factory.create();
-    }
-    return sAlluxioMaster;
   }
 
   /** Maximum number of threads to serve the rpc server. */
@@ -209,20 +198,22 @@ public class AlluxioMaster {
   @ThreadSafe
   public static final class Factory {
     /**
+     * @param masterContext context for the master
      * @return {@link FaultTolerantAlluxioMaster} if Alluxio configuration is set to use zookeeper,
      *         otherwise, return {@link AlluxioMaster}.
      */
-    public static AlluxioMaster create() {
+    public static AlluxioMaster create(MasterContext masterContext) {
       if (Configuration.getBoolean(Constants.ZOOKEEPER_ENABLED)) {
-        return new FaultTolerantAlluxioMaster();
+        return new FaultTolerantAlluxioMaster(masterContext);
       }
-      return new AlluxioMaster();
+      return new AlluxioMaster(masterContext);
     }
 
     private Factory() {} // prevent instantiation.
   }
 
-  protected AlluxioMaster() {
+  protected AlluxioMaster(MasterContext masterContext) {
+    mMasterContext = masterContext;
     mMinWorkerThreads = Configuration.getInt(Constants.MASTER_WORKER_THREADS_MIN);
     mMaxWorkerThreads = Configuration.getInt(Constants.MASTER_WORKER_THREADS_MAX);
 
@@ -265,24 +256,25 @@ public class AlluxioMaster {
       mLineageMasterJournal =
           new ReadWriteJournal(LineageMaster.getJournalDirectory(journalDirectory));
 
-      mBlockMaster = new BlockMaster(mBlockMasterJournal);
-      mFileSystemMaster = new FileSystemMaster(mBlockMaster, mFileSystemMasterJournal);
+      mBlockMaster = new BlockMaster(masterContext, mBlockMasterJournal);
+      mFileSystemMaster =
+          new FileSystemMaster(masterContext, mBlockMaster, mFileSystemMasterJournal);
       if (LineageUtils.isLineageEnabled()) {
-        mLineageMaster = new LineageMaster(mFileSystemMaster, mLineageMasterJournal);
+        mLineageMaster = new LineageMaster(masterContext, mFileSystemMaster, mLineageMasterJournal);
       }
 
       mAdditionalMasters = new ArrayList<>();
       List<? extends Master> masters = Lists.newArrayList(mBlockMaster, mFileSystemMaster);
       for (MasterFactory factory : getServiceLoader()) {
-        Master master = factory.create(masters, journalDirectory);
+        Master master = factory.create(masterContext, masters, journalDirectory);
         if (master != null) {
           mAdditionalMasters.add(master);
         }
       }
 
-      MasterContext.getMasterSource().registerGauges(this);
+      masterContext.getMasterSource().registerGauges(this);
       mMasterMetricsSystem = new MetricsSystem("master");
-      mMasterMetricsSystem.registerSource(MasterContext.getMasterSource());
+      mMasterMetricsSystem.registerSource(masterContext.getMasterSource());
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
       throw Throwables.propagate(e);
@@ -373,27 +365,26 @@ public class AlluxioMaster {
   }
 
   /**
+   * @return the master context for this master
+   */
+  public MasterContext getMasterContext() {
+    return mMasterContext;
+  }
+
+  /**
    * @return true if the system is the leader (serving the rpc server), false otherwise
    */
   boolean isServing() {
     return mIsServing;
   }
 
-  /**
-   * Starts the Alluxio master server.
-   *
-   * @throws Exception if starting the master fails
-   */
+  @Override
   public void start() throws Exception {
     startMasters(true);
     startServing();
   }
 
-  /**
-   * Stops the Alluxio master server.
-   *
-   * @throws Exception if stopping the master fails
-   */
+  @Override
   public void stop() throws Exception {
     if (mIsServing) {
       LOG.info("Stopping RPC server on Alluxio master @ {}", mMasterAddress);

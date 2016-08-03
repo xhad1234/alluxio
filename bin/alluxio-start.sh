@@ -16,10 +16,10 @@ if [[ "$-" == *x* ]]; then
   LAUNCHER="bash -x"
 fi
 BIN=$(cd "$( dirname "$0" )"; pwd)
-
+echo $BIN
 #start up alluxio
 
-USAGE="Usage: alluxio-start.sh [-fhNw] ACTION [MOPT]
+USAGE="Usage: alluxio-start.sh [-hNw] ACTION [MOPT] [-f]
 Where ACTION is one of:
   all [MOPT]     \tStart master and all workers.
   local [MOPT]   \tStart a master and worker locally.

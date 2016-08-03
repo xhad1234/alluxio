@@ -31,7 +31,7 @@ this="$config_bin/$script"
 # This will set the default installation for a tarball installation while os distributors can create
 # their own alluxio-layout.sh file to set system installation locations.
 if [[ -z "$ALLUXIO_SYSTEM_INSTALLATION" ]]; then
-  VERSION=1.2.0-SNAPSHOT
+  VERSION=1.3.0-SNAPSHOT
   ALLUXIO_HOME=$(dirname $(dirname "${this}"))
   ALLUXIO_CONF_DIR="${ALLUXIO_HOME}/conf"
   ALLUXIO_LOGS_DIR="${ALLUXIO_HOME}/logs"
@@ -45,7 +45,7 @@ JAVA=${JAVA:-"${JAVA_HOME}/bin/java"}
 if [[ ! -e ${ALLUXIO_CONF_DIR}/alluxio-env.sh ]]; then
   echo "Cannot find ${ALLUXIO_CONF_DIR}/alluxio-env.sh. To proceed, you can" >&2
   echo "(1) create one based on the provided template file ${ALLUXIO_CONF_DIR}/alluxio-env.sh.template, or" >&2
-  echo "(2) use a bootstraping tool by running: ${ALLUXIO_HOME}/bin/alluxio bootstrap-conf" >&2
+  echo "(2) use a bootstraping tool by running: ${ALLUXIO_HOME}/bin/alluxio bootstrapConf" >&2
   exit 1
 fi
 

@@ -41,8 +41,8 @@ final class FaultTolerantAlluxioMaster extends AlluxioMaster {
   /** The zookeeper client that handles selecting the leader. */
   private LeaderSelectorClient mLeaderSelectorClient = null;
 
-  public FaultTolerantAlluxioMaster() {
-    super();
+  public FaultTolerantAlluxioMaster(MasterContext masterContext) {
+    super(masterContext);
     Preconditions.checkArgument(Configuration.getBoolean(Constants.ZOOKEEPER_ENABLED));
 
     // Set up zookeeper specific functionality.
@@ -74,12 +74,12 @@ final class FaultTolerantAlluxioMaster extends AlluxioMaster {
     mLeaderSelectorClient.setCurrentMasterThread(currentThread);
     boolean started = false;
 
-    while (true) {
+    while (!Thread.interrupted()) {
       if (mLeaderSelectorClient.isLeader()) {
         stopServing();
         stopMasters();
 
-        // Transitioning from standby to master, replace readonly journal with writable journal.
+        // Transitioning from standby to master, replace read-only journal with writable journal.
         mBlockMaster.upgradeToReadWriteJournal(mBlockMasterJournal);
         mFileSystemMaster.upgradeToReadWriteJournal(mFileSystemMasterJournal);
         mLineageMaster.upgradeToReadWriteJournal(mLineageMasterJournal);
@@ -94,13 +94,14 @@ final class FaultTolerantAlluxioMaster extends AlluxioMaster {
           stopServing();
           stopMasters();
 
-          // When transitioning from master to standby, recreate the masters with a readonly
+          // When transitioning from master to standby, recreate the masters with a read-only
           // journal.
-          mBlockMaster = new BlockMaster(new ReadOnlyJournal(mBlockMasterJournal.getDirectory()));
-          mFileSystemMaster = new FileSystemMaster(mBlockMaster,
-              new ReadOnlyJournal(mFileSystemMasterJournal.getDirectory()));
-          mLineageMaster = new LineageMaster(mFileSystemMaster,
-              new ReadOnlyJournal(mLineageMasterJournal.getDirectory()));
+          mBlockMaster = new BlockMaster(mMasterContext,
+              new ReadOnlyJournal(mBlockMasterJournal.getDirectory()));
+          mFileSystemMaster = new FileSystemMaster(mMasterContext,
+              mBlockMaster, new ReadOnlyJournal(mFileSystemMasterJournal.getDirectory()));
+          mLineageMaster = new LineageMaster(mMasterContext,
+              mFileSystemMaster, new ReadOnlyJournal(mLineageMasterJournal.getDirectory()));
           startMasters(false);
           started = true;
         }
